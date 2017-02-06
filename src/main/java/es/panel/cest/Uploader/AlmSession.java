@@ -1,10 +1,14 @@
 package es.panel.cest.Uploader;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
+import org.apache.http.HttpResponse;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Assert;
-import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Base64Encoder;
+import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Constants;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Response;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.RestConnector;
 
@@ -19,29 +23,29 @@ public class AlmSession implements Session {
     private final Map<String, String> requestHeaders = new HashMap<String, String>();
 
     /**
-     * 
+     *
      * @param sessionHost
      * @param sessionPort
      * @param sessionAuthenticationPoint
      * @param domain
-     * @param project 
+     * @param project
      */
-    public AlmSession(String sessionHost, String sessionPort, 
+    public AlmSession(String sessionHost, String sessionPort,
             String sessionAuthenticationPoint, String domain, String project) {
         if (!sessionPort.isEmpty()) {
             sessionPort = ":" + sessionPort;
         }
-        
+
         con = RestConnector.getInstance().init(
                 new HashMap<String, String>(),
-                "http://" 
-                + sessionHost 
+                "http://"
+                + sessionHost
                 + sessionPort
                 + "/qcbin",
                 domain,
                 project);
-        this.authenticationPoint = "http://" + sessionHost + "/qcbin/" + sessionAuthenticationPoint;
-        this.requestHeaders.put("Accept", "application/xml");
+        this.authenticationPoint = "http://" + sessionHost + sessionPort + "/qcbin/" + sessionAuthenticationPoint;
+        //this.requestHeaders.put("Accept", "application/xml");
     }
 
     /**
@@ -52,21 +56,29 @@ public class AlmSession implements Session {
      * Logging in to our system is standard http login (basic authentication),
      * where one must store the returned cookies for further use.
      */
-    public void login(String username, String password) throws Exception {
-        byte[] credBytes;
-        String credEncodedString;
+        /**
+         * byte[] credBytes;
+         * String credEncodedString;
+         * credBytes = (username + ":" + password).getBytes("UTF-8");
+         * credEncodedString = "Basic " + Base64.getEncoder().encodeToString(credBytes);
+         */
+    
+    public void login(String username, String password) throws Exception {               
         Map<String, String> map;
-        Response serverResponse;
+        HttpResponse serverResponse;
+       
+        Encryptor e = new Encryptor();
+        String passEncrypted = e.encrypt(password);
+       // String data = "j_username=" + username + "&j_password=" + passEncrypted;
 
-        credBytes = (username + ":" + password).getBytes();
-        credEncodedString = "Basic " + Base64Encoder.encode(credBytes);
         map = new HashMap<String, String>();
-        map.put("Authorization", credEncodedString);
-        serverResponse = con.httpGet(this.authenticationPoint, null, map);
+
+        
+        serverResponse = con.httpPost1(this.authenticationPoint, username, passEncrypted , map);
         Assert.assertEquals(
                 "Error: unexpected error when loggin in.",
-                HttpURLConnection.HTTP_OK,
-                serverResponse.getStatusCode());
+                500,
+                serverResponse.getStatusLine().getStatusCode());
     }
 
     /**
@@ -102,13 +114,7 @@ public class AlmSession implements Session {
         }
     }
 
-    /**
-     *
-     * @param testSetId
-     * @return
-     * @throws Exception
-     */
-    public String getXMLTestCasesNameAndId(String testSetId) throws Exception {
+    public String getXMLTestCaseID(String testConfigurationID) throws Exception {
         String requirementsUrl;
         StringBuilder b;
         Response serverResponse;
@@ -116,13 +122,12 @@ public class AlmSession implements Session {
 
         requirementsUrl = con.buildEntityCollectionUrl("test-instance");
         b = new StringBuilder();
-        b.append("fields=name,test-id");
-        b.append("&query={contains-test-set.id[");
-        b.append(testSetId);
-        b.append("]}");
-        b.append("&order-by={test-id}");
-        b.append("&page-size=999999");
+        b.append("fields=id,status");
+        b.append("&query={test-id[");
+        b.append(testConfigurationID);
+        b.append("];cycle-id[12404]}"); // ;cycle-id=[12404] por la duplicación de casos (se repite el CONFIGURATION ID)
         serverResponse = con.httpGet(requirementsUrl, b.toString(), requestHeaders);
+
         Assert.assertEquals(
                 "Error: failed obtaining response for requirements collection "
                 + requirementsUrl + ".",
@@ -132,63 +137,55 @@ public class AlmSession implements Session {
 
         return ret;
     }
+    
+    public void updateTestCase(String testCaseID, boolean updateStatus, String pathsToFiles) throws Exception {
+        String requirementsUrl = requirementsUrl = con.buildEntityCollectionUrl("test-instance") + "/" + testCaseID;
+        String[] pathsToFile = pathsToFiles.split(";");
+        String fileName;
+        
+        if (updateStatus) 
+            updateStatus(requirementsUrl);
+        for(String path : pathsToFile) {
+            if (path.contains("\""))
+                path = path.replaceAll("\"", "");
 
-    /**
-     *
-     * @param testCaseId
-     * @return
-     * @throws Exception
-     */
-    public String getXMLTestCaseDescription(String testCaseId) throws Exception {
-        String requirementsUrl;
-        StringBuilder b;
-        Response serverResponse;
-        String ret;
+            if (path.contains("\\"))// || pathToFile.contains("/"))
+                fileName = path.substring(path.lastIndexOf("\\") + 1, path.length());
+            else
+                fileName = path;
+            requestHeaders.put("Slug", fileName);
+            requestHeaders.put("Content-Type", "application/octet-stream");
 
-        requirementsUrl = con.buildEntityCollectionUrl("test");
-        b = new StringBuilder();
-        b.append("fields=description");
-        b.append("&query={id[");
-        b.append(testCaseId);
-        b.append("]}");
-        serverResponse = con.httpGet(requirementsUrl, b.toString(), requestHeaders);
-        Assert.assertEquals(
-                "Error: failed obtaining response for requirements collection "
-                + requirementsUrl + ".",
-                HttpURLConnection.HTTP_OK,
-                serverResponse.getStatusCode());
-        ret = new String(serverResponse.toString().getBytes(), "UTF-8");
+           
+            File fileToAttach = new File(path);
+            FileInputStream fileToAttachFis = new FileInputStream(fileToAttach);
+            byte[] fileContent = new byte[(int)fileToAttach.length()];
+            fileToAttachFis.read(fileContent);
+            fileToAttachFis.close();
 
-        return ret;
+            Response response = con.httpPost(requirementsUrl + "/attachments", fileContent, requestHeaders);
+            if (response.getStatusCode() != HttpURLConnection.HTTP_CREATED) {
+                throw new Exception(response.toString());
+            }
+        }
     }
+    
+    private void updateStatus(String requirementsUrl) throws Exception {
+        String updatedEntityXml = generateSingleFieldUpdateXml("status", "Passed");
 
-    /**
-     *
-     * @param testCaseId
-     * @return
-     * @throws Exception
-     */
-    public String getXMLDesignSteps(String testCaseId) throws Exception {
-        String requirementsUrl;
-        StringBuilder b;
-        Response serverResponse;
-        String ret;
-
-        requirementsUrl = con.buildEntityCollectionUrl("design-step");
-        b = new StringBuilder();
-        b.append("fields=description,expected,link-test");
-        b.append("&query={has-parts-test.id[");
-        b.append(testCaseId);
-        b.append("]}");
-        b.append("&order-by={has-parts-test.name;has-parts-test.id;step-order}");
-        serverResponse = con.httpGet(requirementsUrl, b.toString(), requestHeaders);
-        Assert.assertEquals(
-                "Error: failed obtaining response for requirements collection "
-                + requirementsUrl + ".",
-                HttpURLConnection.HTTP_OK,
-                serverResponse.getStatusCode());
-        ret = new String(serverResponse.toString().getBytes(), "UTF-8");
-
-        return ret;
+        requestHeaders.put("Content-Type", "application/xml");
+        requestHeaders.put("Accept", "application/xml");        
+        
+        Response putResponse = con.httpPut(requirementsUrl, updatedEntityXml.getBytes(), requestHeaders);
+        
+        if (putResponse.getStatusCode() != HttpURLConnection.HTTP_OK) {
+            throw new Exception(putResponse.toString());
+        }
+    }
+    
+    private static String generateSingleFieldUpdateXml(String field, String value) {
+        return "<Entity Type=\"test-instance\"><Fields>"
+                + Constants.generateFieldXml(field, value)
+                + "</Fields></Entity>";
     }
 }

@@ -70,16 +70,13 @@ public class Xml {
      * @throws XPathExpressionException
      */
     public NodeList getNodeList(String xml, String xpathNodes)
-            throws UnsupportedEncodingException, SAXException, IOException, 
+            throws UnsupportedEncodingException, SAXException, IOException,
             ParserConfigurationException, XPathExpressionException {
         Document doc;
         XPathExpression expr;
         Object result;
         NodeList ret;
-		BufferedWriter bw;
-        bw = new BufferedWriter(new FileWriter("nodes.txt"));
-        bw.write(xml +"\r\n");
-        bw.close();
+        
         doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new ByteArrayInputStream(xml.getBytes("UTF-8")));
         expr = XPathFactory.newInstance().newXPath().compile(xpathNodes);
         result = expr.evaluate(doc, XPathConstants.NODESET);

@@ -1,5 +1,6 @@
 package es.panel.cest.Uploader;
 
+
 /**
  *
  * @author panel
@@ -7,53 +8,30 @@ package es.panel.cest.Uploader;
 public interface Session {
 
     /**
-     * 
+     *
      * @param username
      * @param password
-     * @throws Exception 
+     * @throws Exception
      */
     public void login(String username, String password)
             throws Exception;
 
     /**
-     * 
-     * @throws Exception 
+     *
+     * @throws Exception
      */
     public void logout()
             throws Exception;
 
     /**
-     * 
-     * @return
-     * @throws Exception 
+     *
+     * @return @throws Exception
      */
     public boolean isAuthenticated()
             throws Exception;
 
-    /**
-     * 
-     * @param testSetId
-     * @return
-     * @throws Exception 
-     */
-    public String getXMLTestCasesNameAndId(String testSetId)
+    public String getXMLTestCaseID(String testConfigurationID)
             throws Exception;
-
-    /**
-     * 
-     * @param testCaseId
-     * @return
-     * @throws Exception 
-     */
-    public String getXMLTestCaseDescription(String testCaseId)
-            throws Exception;
-
-    /**
-     * 
-     * @param testCaseId
-     * @return
-     * @throws Exception 
-     */
-    public String getXMLDesignSteps(String testCaseId)
-            throws Exception;
+    
+    public void updateTestCase(String testCaseID, boolean updateStatus, String pathToFile) throws Exception;
 }

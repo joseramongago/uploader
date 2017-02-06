@@ -6,10 +6,24 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import org.apache.http.Header;
+import org.apache.http.HttpRequest;
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.ProtocolException;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.DefaultRedirectStrategy;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.protocol.HttpContext;
 
 /**
  * This class keeps the state of the connection for the examples. This class is
@@ -95,6 +109,45 @@ public class RestConnector {
 
         return doHttp("POST", url, null, data, headers, cookies);
     }
+     
+    public HttpResponse httpPost1(String url, String user, String password, Map<String, String> headers)
+            throws IOException {
+        HttpClient client = HttpClientBuilder.create().setRedirectStrategy(new DefaultRedirectStrategy () {
+            @Override
+            public boolean isRedirected(HttpRequest request, HttpResponse response, HttpContext context) throws ProtocolException {
+                boolean isRedirected = false;
+                try {
+                    isRedirected = super.isRedirected(request, response, context);
+                    Header[] requestHeaders = response.getAllHeaders();
+                    for (Header header : requestHeaders) {
+                        if (header.getName().equalsIgnoreCase("Set-Cookie")) {
+                            String key = header.getValue().substring(0, header.getValue().indexOf("="));
+                            String val = header.getValue().substring(header.getValue().indexOf("=") + 1, header.getValue().length());
+                            cookies.put(key, val);
+                        }
+                    }
+                } catch(ProtocolException e) {
+                    e.printStackTrace();
+                } 
+                if (!isRedirected) {
+                    int responseCode = response.getStatusLine().getStatusCode();
+                    if (responseCode == 301 || responseCode == 302)
+                        return true;
+                }
+                return false;
+            }
+        }).build();
+        HttpPost request = new HttpPost(url);
+                
+        List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>();
+        nameValuePairs.add(new BasicNameValuePair("j_username",user));
+        nameValuePairs.add(new BasicNameValuePair("j_password",password));
+
+        request.setEntity(new UrlEncodedFormEntity(nameValuePairs, "UTF-8"));
+        HttpResponse response = client.execute(request);
+        
+        return response;
+    }
 
     public Response httpDelete(String url, Map<String, String> headers)
             throws Exception {
@@ -135,7 +188,7 @@ public class RestConnector {
 
         con.setRequestMethod(type);
         String cookieString = getCookieString();
-
+        HttpURLConnection.setFollowRedirects(false);
         prepareHttpRequest(con, headers, data, cookieString);
         con.connect();
         Response ret = retrieveHtmlResponse(con);
