@@ -1,14 +1,13 @@
-package es.panel.cest.Uploader;
+package es.panel.cest.Uploader.session_factory;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.http.HttpResponse;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Assert;
-import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Constants;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Response;
 import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.RestConnector;
 
@@ -21,7 +20,7 @@ public class AlmSession implements Session {
     private final RestConnector con;
     private final String authenticationPoint;
     private final Map<String, String> requestHeaders = new HashMap<String, String>();
-
+    private final Xml xmlExtractor;
     /**
      *
      * @param sessionHost
@@ -45,7 +44,7 @@ public class AlmSession implements Session {
                 domain,
                 project);
         this.authenticationPoint = "http://" + sessionHost + sessionPort + "/qcbin/" + sessionAuthenticationPoint;
-        //this.requestHeaders.put("Accept", "application/xml");
+        xmlExtractor = new Xml();
     }
 
     /**
@@ -56,29 +55,19 @@ public class AlmSession implements Session {
      * Logging in to our system is standard http login (basic authentication),
      * where one must store the returned cookies for further use.
      */
-        /**
-         * byte[] credBytes;
-         * String credEncodedString;
-         * credBytes = (username + ":" + password).getBytes("UTF-8");
-         * credEncodedString = "Basic " + Base64.getEncoder().encodeToString(credBytes);
-         */
-    
     public void login(String username, String password) throws Exception {               
-        Map<String, String> map;
         HttpResponse serverResponse;
        
         Encryptor e = new Encryptor();
-        String passEncrypted = e.encrypt(password);
-       // String data = "j_username=" + username + "&j_password=" + passEncrypted;
+        String passEncrypted = e.encrypt(password); 
 
-        map = new HashMap<String, String>();
-
-        
-        serverResponse = con.httpPost1(this.authenticationPoint, username, passEncrypted , map);
-        Assert.assertEquals(
-                "Error: unexpected error when loggin in.",
-                500,
-                serverResponse.getStatusLine().getStatusCode());
+        serverResponse = con.httpPost1(this.authenticationPoint, username, 
+                passEncrypted , new HashMap<String, String>());
+        // El log in en el REST de la empresa nos lleva a página en blanco que
+        // devuelve error 500 pero es correcto.
+        if (serverResponse.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_INTERNAL_ERROR) {
+            System.out.println("* Error: unexpected error when loggin in.");
+        }
     }
 
     /**
@@ -89,10 +78,10 @@ public class AlmSession implements Session {
         Response serverResponse;
 
         serverResponse = con.httpGet(con.buildUrl("authentication-point/logout"), null, null);
-        Assert.assertEquals(
-                "Error: unexpected error when loggin out.",
-                HttpURLConnection.HTTP_OK,
-                serverResponse.getStatusCode());
+        
+        if (serverResponse.getStatusCode() != HttpURLConnection.HTTP_OK) {
+            System.out.println("* Error: unexpected error when loggin out.");
+        }
     }
 
     /**
@@ -139,29 +128,17 @@ public class AlmSession implements Session {
     }
     
     public void updateTestCase(String testCaseID, boolean updateStatus, String pathsToFiles) throws Exception {
-        String requirementsUrl = requirementsUrl = con.buildEntityCollectionUrl("test-instance") + "/" + testCaseID;
+        String requirementsUrl = con.buildEntityCollectionUrl("test-instance") + "/" + testCaseID;
+        
+        if (pathsToFiles.contains("\""))
+            pathsToFiles = pathsToFiles.replaceAll("\"", "");
+        
         String[] pathsToFile = pathsToFiles.split(";");
-        String fileName;
         
         if (updateStatus) 
-            updateStatus(requirementsUrl);
+            updateStatus(testCaseID);
         for(String path : pathsToFile) {
-            if (path.contains("\""))
-                path = path.replaceAll("\"", "");
-
-            if (path.contains("\\"))// || pathToFile.contains("/"))
-                fileName = path.substring(path.lastIndexOf("\\") + 1, path.length());
-            else
-                fileName = path;
-            requestHeaders.put("Slug", fileName);
-            requestHeaders.put("Content-Type", "application/octet-stream");
-
-           
-            File fileToAttach = new File(path);
-            FileInputStream fileToAttachFis = new FileInputStream(fileToAttach);
-            byte[] fileContent = new byte[(int)fileToAttach.length()];
-            fileToAttachFis.read(fileContent);
-            fileToAttachFis.close();
+            byte[] fileContent = readFile(path);
 
             Response response = con.httpPost(requirementsUrl + "/attachments", fileContent, requestHeaders);
             if (response.getStatusCode() != HttpURLConnection.HTTP_CREATED) {
@@ -170,9 +147,31 @@ public class AlmSession implements Session {
         }
     }
     
-    private void updateStatus(String requirementsUrl) throws Exception {
-        String updatedEntityXml = generateSingleFieldUpdateXml("status", "Passed");
+    private byte[] readFile(String pathToFile) throws IOException {
+        String fileName = null;
 
+        if (pathToFile.contains("\\"))// || pathToFile.contains("/"))
+            fileName = pathToFile.substring(pathToFile.lastIndexOf("\\") + 1, pathToFile.length());
+        else
+            fileName = pathToFile;
+        requestHeaders.put("Slug", fileName);
+        requestHeaders.put("Content-Type", "application/octet-stream");
+
+        File fileToAttach = new File(pathToFile);
+        FileInputStream fileToAttachFis = new FileInputStream(fileToAttach);
+        byte[] fileContent = new byte[(int)fileToAttach.length()];
+        fileToAttachFis.read(fileContent);
+        fileToAttachFis.close();
+        
+        return fileContent;
+    }
+    
+    private void updateStatus(String testCaseID) throws Exception {
+        String requirementsUrl = con.buildEntityCollectionUrl("test-instance");
+        String updatedEntityXml = xmlExtractor.generateSingleFieldUpdateXml("status", "Passed");
+
+        requirementsUrl += "/" + testCaseID;
+        
         requestHeaders.put("Content-Type", "application/xml");
         requestHeaders.put("Accept", "application/xml");        
         
@@ -181,11 +180,5 @@ public class AlmSession implements Session {
         if (putResponse.getStatusCode() != HttpURLConnection.HTTP_OK) {
             throw new Exception(putResponse.toString());
         }
-    }
-    
-    private static String generateSingleFieldUpdateXml(String field, String value) {
-        return "<Entity Type=\"test-instance\"><Fields>"
-                + Constants.generateFieldXml(field, value)
-                + "</Fields></Entity>";
     }
 }

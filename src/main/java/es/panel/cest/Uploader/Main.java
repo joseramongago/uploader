@@ -1,5 +1,7 @@
 package es.panel.cest.Uploader;
 
+import es.panel.cest.Uploader.session_factory.Session;
+import es.panel.cest.Uploader.session_factory.SessionFactory;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;

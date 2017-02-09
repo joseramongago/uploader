@@ -1,8 +1,6 @@
-package es.panel.cest.Uploader;
+package es.panel.cest.Uploader.session_factory;
 
-import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
@@ -18,6 +16,7 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
+import org.hp.qc.web.restapi.docexamples.docexamples.infrastructure.Constants;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -83,5 +82,11 @@ public class Xml {
         ret = (NodeList) result;
 
         return ret;
+    }
+    
+    public String generateSingleFieldUpdateXml(String field, String value) {
+        return "<Entity Type=\"test-instance\"><Fields>"
+                + Constants.generateFieldXml(field, value)
+                + "</Fields></Entity>";
     }
 }

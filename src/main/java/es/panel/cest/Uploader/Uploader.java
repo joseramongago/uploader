@@ -1,5 +1,7 @@
 package es.panel.cest.Uploader;
 
+import es.panel.cest.Uploader.session_factory.Session;
+import es.panel.cest.Uploader.session_factory.Xml;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -10,7 +12,7 @@ public class Uploader {
 
     private final Session session;
     private BufferedReader br = null;
-    private Xml xml;
+    private final Xml xml;
 
     public Uploader(Session session) {
         this.session = session;
